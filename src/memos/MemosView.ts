@@ -1493,10 +1493,14 @@ export class MemosView extends ItemView {
 
 			if (event.key === "Enter" || event.key === "Tab") {
 				event.preventDefault();
-				void applySuggestion(suggestions[selectedIndex]);
+				const selectedSuggestion = suggestions[selectedIndex];
+				if (!selectedSuggestion) {
+					hidePanel();
+					return;
+				}
+				void applySuggestion(selectedSuggestion);
 				return;
 			}
-
 		});
 	}
 
