@@ -1,4 +1,4 @@
-﻿import { ItemView, MarkdownRenderer, Menu, Notice, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
+import { ItemView, MarkdownRenderer, Menu, Notice, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
 import { Scope } from "obsidian";
 import type MemosViewPlugin from "../main";
 import { Modal, TFile, setTooltip } from "obsidian";
@@ -71,9 +71,18 @@ export class MemosView extends ItemView {
 	async onOpen(): Promise<void> {
 		this.containerEl.addClass("memos-view");
 		this.scope = new Scope(this.app.scope);
-		this.scope.register([], "Escape", () => false);
-		this.registerDomEvent(this.containerEl, "keydown", (event: KeyboardEvent) => {
-			if (event.key !== "Escape") {
+		this.scope.register([], "Escape", () => {
+			if (this.inlineEditingMemoId) {
+				this.cancelInlineEditing();
+			}
+			return false;
+		});
+		this.registerDomEvent(window, "keydown", (event: KeyboardEvent) => {
+			if (this.handleInlineEditorEscape(event)) {
+				return;
+			}
+
+			if (!isSaveShortcut(event)) {
 				return;
 			}
 
@@ -82,11 +91,43 @@ export class MemosView extends ItemView {
 				return;
 			}
 
+			const textareaEl = target.closest("textarea");
+			if (!(textareaEl instanceof HTMLTextAreaElement)) {
+				return;
+			}
+
+			if (!textareaEl.matches(".memos-composer-input, .memos-inline-editor-input")) {
+				return;
+			}
+
+			event.preventDefault();
+			event.stopPropagation();
+			event.stopImmediatePropagation();
+			void this.saveActiveTextareaMemo(textareaEl);
+		}, { capture: true });
+		this.registerDomEvent(this.containerEl, "keydown", (event: KeyboardEvent) => {
+			if (!isEscapeKey(event)) {
+				return;
+			}
+
+			const target = event.target as HTMLElement | null;
+			if (!target || !this.containerEl.contains(target)) {
+				return;
+			}
+
+			if (target.closest(".memos-inline-editor")) {
+				event.preventDefault();
+				event.stopPropagation();
+				event.stopImmediatePropagation();
+				this.cancelInlineEditing();
+				return;
+			}
+
 			event.preventDefault();
 			event.stopPropagation();
 		}, { capture: true });
 		this.registerDomEvent(this.containerEl, "keyup", (event: KeyboardEvent) => {
-			if (event.key !== "Escape") {
+			if (!isEscapeKey(event)) {
 				return;
 			}
 
@@ -198,6 +239,7 @@ export class MemosView extends ItemView {
 						type: "button",
 						"aria-label": cell.dayKey,
 						"aria-pressed": String(this.activeDayKey === cell.dayKey),
+						"data-day-key": cell.dayKey,
 					},
 				});
 				setTooltip(cellEl, cell.dayKey, {
@@ -207,7 +249,9 @@ export class MemosView extends ItemView {
 				cellEl.addEventListener("click", () => {
 					this.activeDayKey = this.activeDayKey === cell.dayKey ? null : cell.dayKey;
 					this.resetVisibleMemoCount();
-					void this.render();
+					this.updateHeatmapCellStates();
+					this.updateTitleDateState();
+					this.renderFilteredMemoStream();
 				});
 			});
 		});
@@ -250,6 +294,7 @@ export class MemosView extends ItemView {
 				type: "button",
 				"aria-pressed": String(this.statusFilter === filter),
 				"aria-label": `${label} memos (${count})`,
+				"data-status-filter": filter,
 			},
 		});
 		const labelEl = buttonEl.createSpan({ cls: "memos-status-filter-label" });
@@ -259,10 +304,9 @@ export class MemosView extends ItemView {
 		buttonEl.createSpan({ cls: "memos-status-filter-count", text: String(count) });
 		buttonEl.addEventListener("click", () => {
 			this.statusFilter = this.statusFilter === filter ? "active" : filter;
-			this.activeTag = null;
-			this.activeDayKey = null;
 			this.resetVisibleMemoCount();
-			void this.render();
+			this.updateStatusFilterButtonStates();
+			this.renderFilteredMemoStream();
 		});
 		if (filter === "deleted") {
 			buttonEl.addEventListener("contextmenu", (event) => {
@@ -272,51 +316,36 @@ export class MemosView extends ItemView {
 		}
 	}
 
+	private updateStatusFilterButtonStates(): void {
+		this.contentEl.querySelectorAll<HTMLElement>(".memos-status-filter-button").forEach((buttonEl) => {
+			const filter = buttonEl.dataset.statusFilter;
+			const isActive = filter === this.statusFilter;
+			buttonEl.toggleClass("is-active", isActive);
+			buttonEl.setAttribute("aria-pressed", String(isActive));
+		});
+	}
+
+	private updateHeatmapCellStates(): void {
+		this.contentEl.querySelectorAll<HTMLElement>(".memos-heatmap-cell").forEach((cellEl) => {
+			const isActive = cellEl.dataset.dayKey === this.activeDayKey;
+			cellEl.toggleClass("is-active", isActive);
+			cellEl.setAttribute("aria-pressed", String(isActive));
+		});
+	}
+
+	private updateTitleDateState(): void {
+		const titleEl = this.contentEl.querySelector<HTMLElement>(".memos-title");
+		if (!titleEl) {
+			return;
+		}
+
+		this.renderTitleDateState(titleEl);
+	}
+
 	private renderTopbar(parentEl: HTMLElement): HTMLInputElement {
 		const topbarEl = parentEl.createDiv({ cls: "memos-topbar" });
 		const titleEl = topbarEl.createDiv({ cls: "memos-title" });
-		if (this.activeDayKey) {
-			const homeButton = titleEl.createEl("button", {
-				cls: "memos-title-home is-icon",
-				attr: {
-					type: "button",
-					"aria-label": `Clear date filter ${this.activeDayKey}`,
-				},
-			});
-			setIcon(homeButton, "house");
-			homeButton.addEventListener("click", () => {
-				this.activeDayKey = null;
-				this.resetVisibleMemoCount();
-				void this.render();
-			});
-
-			titleEl.createSpan({ cls: "memos-title-separator", text: "/" });
-			titleEl.createSpan({ cls: "memos-title-date-label", text: this.activeDayKey });
-		} else {
-			const homeButton = titleEl.createEl("button", {
-				cls: "memos-title-home",
-				attr: {
-					type: "button",
-					"aria-label": "Memos",
-				},
-			});
-			homeButton.setText(this.plugin.settings.displayName || "memos");
-		}
-
-		const sortButton = titleEl.createEl("button", {
-			cls: "memos-title-menu-button",
-			attr: {
-				type: "button",
-				"aria-label": `Choose sort order, current ${getSortLabel(this.sortOrder)}`,
-			},
-		});
-		const chevronEl = sortButton.createSpan({ cls: "memos-title-date-chevron" });
-		setIcon(chevronEl, "chevron-down");
-		sortButton.addEventListener("click", (event) => {
-			event.preventDefault();
-			event.stopPropagation();
-			this.openSortMenu(event);
-		});
+		this.renderTitleDateState(titleEl);
 
 		const actionsEl = topbarEl.createDiv({ cls: "memos-topbar-actions" });
 		const randomWalkButtonEl = actionsEl.createEl("button", {
@@ -352,6 +381,54 @@ export class MemosView extends ItemView {
 			this.updateSearch(searchEl.value);
 		});
 		return searchEl;
+	}
+
+	private renderTitleDateState(titleEl: HTMLElement): void {
+		titleEl.empty();
+		if (this.activeDayKey) {
+			const homeButton = titleEl.createEl("button", {
+				cls: "memos-title-home is-icon",
+				attr: {
+					type: "button",
+					"aria-label": `Clear date filter ${this.activeDayKey}`,
+				},
+			});
+			setIcon(homeButton, "house");
+			homeButton.addEventListener("click", () => {
+				this.activeDayKey = null;
+				this.resetVisibleMemoCount();
+				this.updateHeatmapCellStates();
+				this.updateTitleDateState();
+				this.renderFilteredMemoStream();
+			});
+
+			titleEl.createSpan({ cls: "memos-title-separator", text: "/" });
+			titleEl.createSpan({ cls: "memos-title-date-label", text: this.activeDayKey });
+		} else {
+			const homeButton = titleEl.createEl("button", {
+				cls: "memos-title-home",
+				attr: {
+					type: "button",
+					"aria-label": "Memos",
+				},
+			});
+			homeButton.setText(this.plugin.settings.displayName || "memos");
+		}
+
+		const sortButton = titleEl.createEl("button", {
+			cls: "memos-title-menu-button",
+			attr: {
+				type: "button",
+				"aria-label": `Choose sort order, current ${getSortLabel(this.sortOrder)}`,
+			},
+		});
+		const chevronEl = sortButton.createSpan({ cls: "memos-title-date-chevron" });
+		setIcon(chevronEl, "arrow-down-wide-narrow");
+		sortButton.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			this.openSortMenu(event);
+		});
 	}
 
 	private updateSearch(value: string): void {
@@ -416,36 +493,8 @@ export class MemosView extends ItemView {
 		});
 		setIcon(submitButton, "send");
 		submitButton.setAttribute("aria-label", "Save memo");
-		textareaEl.addEventListener("keydown", (event) => {
-			if (event.defaultPrevented) {
-				return;
-			}
-
-			if (event.key !== "Enter" || event.shiftKey) {
-				return;
-			}
-
-			event.preventDefault();
-			submitButton.click();
-		});
 		submitButton.addEventListener("click", async () => {
-			if (!this.composerValue.trim()) {
-				new Notice("Write something first.");
-				return;
-			}
-
-			if (this.editingMemo) {
-				await this.plugin.updateMemoEntry(this.editingMemo, this.composerValue);
-				new Notice("Memo updated.");
-			} else {
-				await this.plugin.appendMemoToToday(this.composerValue);
-				new Notice("Saved to today's daily note.");
-			}
-
-			this.composerValue = "";
-			this.editingMemo = null;
-			this.isComposerExpanded = false;
-			await this.render();
+			await this.saveComposerMemo();
 		});
 
 		this.updateComposerStateClasses(composerEl, this.isComposerExpanded || Boolean(this.composerValue.trim()));
@@ -503,6 +552,42 @@ export class MemosView extends ItemView {
 		this.renderMemoStream(this.memoStreamContainerEl, viewModel.filteredMemos);
 	}
 
+	private async refreshMemoStream(): Promise<void> {
+		if (!this.memoStreamContainerEl) {
+			await this.render();
+			return;
+		}
+
+		this.memos = await loadMemosFromDailyNotes(
+			this.app,
+			this.plugin.getDailyNotesFolder(),
+			this.plugin.settings.timestampFormat,
+			this.plugin.settings.boundFilePath || undefined,
+		);
+		this.renderFilteredMemoStream();
+	}
+
+	private handleInlineEditorEscape(event: KeyboardEvent): boolean {
+		if (!isEscapeKey(event) || !this.inlineEditingMemoId) {
+			return false;
+		}
+
+		const activeElement = document.activeElement;
+		const eventTarget = event.target instanceof Node ? event.target : null;
+		const isInThisView =
+			(activeElement instanceof Node && this.containerEl.contains(activeElement)) ||
+			(eventTarget !== null && this.containerEl.contains(eventTarget));
+		if (!isInThisView) {
+			return false;
+		}
+
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		this.cancelInlineEditing();
+		return true;
+	}
+
 	private createBackToTopButton(parentEl: HTMLElement, bodyEl: HTMLElement): HTMLButtonElement {
 		const buttonEl = parentEl.createEl("button", {
 			cls: "memos-back-to-top",
@@ -532,9 +617,7 @@ export class MemosView extends ItemView {
 					this.renderFilteredMemoStream();
 				});
 
-				if (this.sortOrder === item.value) {
-					menuItem.setIcon("check");
-				}
+				menuItem.setIcon(this.sortOrder === item.value ? "check" : item.icon);
 			});
 		});
 		menu.showAtMouseEvent(event);
@@ -1015,10 +1098,6 @@ export class MemosView extends ItemView {
 				return;
 			}
 
-			if (window.getSelection()?.toString().trim()) {
-				return;
-			}
-
 			void this.beginInlineEditingMemo(memo);
 		});
 
@@ -1070,10 +1149,41 @@ export class MemosView extends ItemView {
 
 		const contentEl = cardEl.createDiv({ cls: "memos-card-content markdown-rendered" });
 		await MarkdownRenderer.render(this.app, memo.content, contentEl, memo.sourcePath, this);
+		this.bindRenderedInternalLinks(contentEl, memo.sourcePath);
+		this.highlightSearchMatches(contentEl);
+	}
+
+	bindRenderedInternalLinks(contentEl: HTMLElement, sourcePath: string): void {
+		contentEl.addEventListener("mouseover", (event) => {
+			const target = event.target as HTMLElement | null;
+			const linkEl = target?.closest("a.internal-link");
+			if (!(linkEl instanceof HTMLAnchorElement) || !contentEl.contains(linkEl)) {
+				return;
+			}
+
+			const relatedTarget = event.relatedTarget as Node | null;
+			if (relatedTarget && linkEl.contains(relatedTarget)) {
+				return;
+			}
+
+			const linktext = linkEl.getAttribute("data-href") ?? linkEl.getAttribute("href") ?? "";
+			if (!linktext) {
+				return;
+			}
+
+			this.app.workspace.trigger("hover-link", {
+				event,
+				source: VIEW_TYPE_MEMOS,
+				hoverParent: this.leaf,
+				targetEl: linkEl,
+				linktext,
+				sourcePath,
+			});
+		});
 		contentEl.addEventListener("click", (event) => {
 			const target = event.target as HTMLElement | null;
 			const linkEl = target?.closest("a.internal-link");
-			if (!(linkEl instanceof HTMLAnchorElement)) {
+			if (!(linkEl instanceof HTMLAnchorElement) || !contentEl.contains(linkEl)) {
 				return;
 			}
 
@@ -1081,11 +1191,10 @@ export class MemosView extends ItemView {
 			event.stopPropagation();
 			void this.app.workspace.openLinkText(
 				linkEl.getAttribute("data-href") ?? linkEl.getAttribute("href") ?? "",
-				memo.sourcePath,
+				sourcePath,
 				false,
 			);
 		});
-		this.highlightSearchMatches(contentEl);
 	}
 
 	private highlightSearchMatches(rootEl: HTMLElement): void {
@@ -1216,19 +1325,6 @@ export class MemosView extends ItemView {
 		setIcon(submitButton, "send");
 		submitButton.addEventListener("click", async () => {
 			await this.saveInlineEditedMemo(memo);
-		});
-
-		textareaEl.addEventListener("keydown", (event) => {
-			if (event.defaultPrevented) {
-				return;
-			}
-
-			if (event.key !== "Enter" || event.shiftKey) {
-				return;
-			}
-
-			event.preventDefault();
-			void this.saveInlineEditedMemo(memo);
 		});
 
 		window.setTimeout(() => {
@@ -1735,6 +1831,61 @@ export class MemosView extends ItemView {
 		this.renderFilteredMemoStream();
 	}
 
+	private async saveActiveTextareaMemo(textareaEl: HTMLTextAreaElement): Promise<void> {
+		if (textareaEl.matches(".memos-composer-input")) {
+			await this.saveComposerMemo();
+			return;
+		}
+
+		if (!textareaEl.matches(".memos-inline-editor-input")) {
+			return;
+		}
+
+		const memo = this.memos.find((item) => item.id === this.inlineEditingMemoId);
+		if (!memo) {
+			return;
+		}
+
+		await this.saveInlineEditedMemo(memo);
+	}
+
+	private async saveComposerMemo(): Promise<void> {
+		if (!this.composerValue.trim()) {
+			new Notice("Write something first.");
+			return;
+		}
+
+		const memoBeingEdited = this.editingMemo;
+		const content = this.composerValue;
+		this.composerValue = "";
+		this.editingMemo = null;
+		this.isComposerExpanded = false;
+
+		this.clearComposerInput();
+
+		if (memoBeingEdited) {
+			await this.plugin.updateMemoEntry(memoBeingEdited, content, { refresh: false });
+			new Notice("Memo updated.");
+		} else {
+			await this.plugin.appendMemoToToday(content, { refresh: false });
+			new Notice("Saved to today's daily note.");
+		}
+
+		await this.refreshMemoStream();
+	}
+
+	private clearComposerInput(): void {
+		const textareaEl = this.contentEl.find(".memos-composer-input");
+		if (textareaEl instanceof HTMLTextAreaElement) {
+			textareaEl.value = "";
+		}
+
+		const composerEl = this.contentEl.find(".memos-composer");
+		if (composerEl instanceof HTMLElement) {
+			this.updateComposerStateClasses(composerEl, false);
+		}
+	}
+
 	private cancelInlineEditing(): void {
 		this.inlineEditingMemoId = null;
 		this.inlineEditorValue = "";
@@ -1747,11 +1898,12 @@ export class MemosView extends ItemView {
 			return;
 		}
 
-		await this.plugin.updateMemoEntry(memo, this.inlineEditorValue);
+		const content = this.inlineEditorValue;
 		this.inlineEditingMemoId = null;
 		this.inlineEditorValue = "";
+		await this.plugin.updateMemoEntry(memo, content, { refresh: false });
 		new Notice("Memo updated.");
-		await this.render();
+		await this.refreshMemoStream();
 	}
 
 	private renderStatusBadge(parentEl: HTMLElement, label: string, icon: string): void {
@@ -1762,29 +1914,29 @@ export class MemosView extends ItemView {
 	}
 
 	private async toggleArchiveMemo(memo: MemoEntry): Promise<void> {
-		await this.plugin.archiveMemoEntry(memo);
+		await this.plugin.archiveMemoEntry(memo, { refresh: false });
 		if (this.inlineEditingMemoId === memo.id) {
 			this.inlineEditingMemoId = null;
 			this.inlineEditorValue = "";
 		}
 		new Notice(memo.archivedAt ? "Memo moved back to active." : "Memo archived.");
-		await this.render();
+		await this.refreshMemoStream();
 	}
 
 	private async togglePinMemo(memo: MemoEntry): Promise<void> {
-		await this.plugin.pinMemoEntry(memo);
+		await this.plugin.pinMemoEntry(memo, { refresh: false });
 		new Notice(memo.pinnedAt ? "Memo unpinned." : "Memo pinned.");
-		await this.render();
+		await this.refreshMemoStream();
 	}
 
 	private async deleteMemo(memo: MemoEntry): Promise<void> {
-		await this.plugin.deleteMemoEntry(memo);
+		await this.plugin.deleteMemoEntry(memo, { refresh: false });
 		if (this.inlineEditingMemoId === memo.id) {
 			this.inlineEditingMemoId = null;
 			this.inlineEditorValue = "";
 		}
 		new Notice(memo.deletedAt ? "Memo restored." : "Memo marked as deleted.");
-		await this.render();
+		await this.refreshMemoStream();
 	}
 }
 
@@ -1864,7 +2016,16 @@ class MemosRandomWalkModal extends Modal {
 
 		const titleRowEl = headerEl.createDiv({ cls: "memos-random-walk-title-row" });
 		titleRowEl.createEl("h2", { text: memo.sourceBasename });
-		const shuffleButtonEl = titleRowEl.createEl("button", {
+		const titleActionsEl = titleRowEl.createDiv({ cls: "memos-random-walk-title-actions" });
+		const openFileButtonEl = titleActionsEl.createEl("button", {
+			cls: "memos-random-walk-next",
+			attr: { type: "button", "aria-label": "Open source file" },
+		});
+		setIcon(openFileButtonEl, "file-edit");
+		openFileButtonEl.addEventListener("click", () => {
+			void this.openSourceAndClose(memo);
+		});
+		const shuffleButtonEl = titleActionsEl.createEl("button", {
 			cls: "memos-random-walk-next",
 			attr: { type: "button", "aria-label": "Next random memo" },
 		});
@@ -1887,29 +2048,11 @@ class MemosRandomWalkModal extends Modal {
 
 		const bodyEl = cardEl.createDiv({ cls: "memos-random-walk-body markdown-rendered" });
 		await MarkdownRenderer.render(this.app, memo.content, bodyEl, memo.sourcePath, this.view);
+		this.view.bindRenderedInternalLinks(bodyEl, memo.sourcePath);
 
 		const footerEl = cardEl.createDiv({ cls: "memos-random-walk-footer" });
 		const sourceInfoEl = footerEl.createDiv({ cls: "memos-random-walk-source" });
 		sourceInfoEl.createSpan({ text: memo.sourcePath });
-
-		const actionsEl = footerEl.createDiv({ cls: "memos-random-walk-actions" });
-		const openButtonEl = actionsEl.createEl("button", {
-			cls: "memos-random-walk-action is-secondary",
-			text: "Open source",
-			attr: { type: "button" },
-		});
-		openButtonEl.addEventListener("click", () => {
-			void this.openSourceAndClose(memo);
-		});
-
-		const nextButtonEl = actionsEl.createEl("button", {
-			cls: "memos-random-walk-action is-primary",
-			text: "Next wander",
-			attr: { type: "button" },
-		});
-		nextButtonEl.addEventListener("click", () => {
-			void this.showRandomMemo();
-		});
 	}
 
 	private createMetaPill(parentEl: HTMLElement, icon: string, label: string): void {
@@ -1939,12 +2082,12 @@ function createLocalTimestampForFileName(date: Date): string {
 	return `${year}${month}${day}${hours}${minutes}${seconds}`;
 }
 
-function getSortMenuItems(): Array<{ title: string; value: MemosSortOrder }> {
+function getSortMenuItems(): Array<{ title: string; value: MemosSortOrder; icon: string }> {
 	return [
-		{ title: "Created time, newest first", value: "created-desc" },
-		{ title: "Created time, oldest first", value: "created-asc" },
-		{ title: "Edited time, newest first", value: "updated-desc" },
-		{ title: "Edited time, oldest first", value: "updated-asc" },
+		{ title: "Created time, newest first", value: "created-desc", icon: "arrow-down-wide-narrow" },
+		{ title: "Created time, oldest first", value: "created-asc", icon: "arrow-up-narrow-wide" },
+		{ title: "Edited time, newest first", value: "updated-desc", icon: "arrow-down-wide-narrow" },
+		{ title: "Edited time, oldest first", value: "updated-asc", icon: "arrow-up-narrow-wide" },
 	];
 }
 
@@ -1960,6 +2103,14 @@ function getSortLabel(sortOrder: MemosSortOrder): string {
 		default:
 			return "created time, newest first";
 	}
+}
+
+function isSaveShortcut(event: KeyboardEvent): boolean {
+	return event.key === "Enter" && (event.ctrlKey || event.metaKey);
+}
+
+function isEscapeKey(event: KeyboardEvent): boolean {
+	return event.key === "Escape" || event.key === "Esc";
 }
 
 function buildTagTree(tagStats: Array<{ tag: string; count: number }>): TagTreeNode[] {

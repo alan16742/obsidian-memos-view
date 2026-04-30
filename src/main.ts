@@ -8,7 +8,7 @@ import {
 	setMemoStatusValue,
 	splitFrontmatter,
 } from "./memos/parser";
-import { MemosView } from "./memos/MemosView";
+import { MemosView } from "./memos/memosView";
 import { DEFAULT_SETTINGS, MemosSettingTab } from "./settings";
 import { VIEW_TYPE_MEMOS } from "./types";
 import type { DailyNotesConfig, MemoEntry, MemosPluginSettings } from "./types";
@@ -27,6 +27,10 @@ export default class MemosViewPlugin extends Plugin {
 			VIEW_TYPE_MEMOS,
 			(leaf) => new MemosView(leaf, this),
 		);
+		this.registerHoverLinkSource(VIEW_TYPE_MEMOS, {
+			display: "Memos",
+			defaultMod: false,
+		});
 
 		this.addRibbonIcon("lightbulb", "Open memos view", () => {
 			void this.activateMemosView();
@@ -226,7 +230,7 @@ export default class MemosViewPlugin extends Plugin {
 		return normalizePath(folder ? `${folder}/${fileName}.md` : `${fileName}.md`);
 	}
 
-	async appendMemoToToday(content: string): Promise<void> {
+	async appendMemoToToday(content: string, options: { refresh?: boolean } = {}): Promise<void> {
 		const normalized = content.trim();
 		if (!normalized) {
 			return;
@@ -247,18 +251,26 @@ export default class MemosViewPlugin extends Plugin {
 			const nextFileContent = frontmatter
 				? `${frontmatter}\n\n${nextBody}`
 				: nextBody;
+			this.suppressVaultRefresh(existing.path);
 			await this.app.vault.modify(existing, nextFileContent);
 		} else {
 			if (folder) {
 				await this.app.vault.createFolder(folder).catch(() => undefined);
 			}
+			this.suppressVaultRefresh(filePath);
 			await this.app.vault.create(filePath, payload);
 		}
 
-		await this.refreshAllMemosViews();
+		if (options.refresh !== false) {
+			await this.refreshAllMemosViews();
+		}
 	}
 
-	async updateMemoEntry(memo: MemoEntry, nextContent: string): Promise<void> {
+	async updateMemoEntry(
+		memo: MemoEntry,
+		nextContent: string,
+		options: { refresh?: boolean } = {},
+	): Promise<void> {
 		const normalized = nextContent.trim();
 		if (!normalized) {
 			return;
@@ -303,20 +315,23 @@ export default class MemosViewPlugin extends Plugin {
 				: frontmatter
 			: nextBody;
 
+		this.suppressVaultRefresh(file.path);
 		await this.app.vault.modify(file, nextFileContent);
-		await this.refreshAllMemosViews();
+		if (options.refresh !== false) {
+			await this.refreshAllMemosViews();
+		}
 	}
 
-	async deleteMemoEntry(memo: MemoEntry): Promise<void> {
-		await this.updateMemoStatus(memo, "deleted", !memo.deletedAt);
+	async deleteMemoEntry(memo: MemoEntry, options: { refresh?: boolean } = {}): Promise<void> {
+		await this.updateMemoStatus(memo, "deleted", !memo.deletedAt, options);
 	}
 
-	async archiveMemoEntry(memo: MemoEntry): Promise<void> {
-		await this.updateMemoStatus(memo, "archived", !memo.archivedAt);
+	async archiveMemoEntry(memo: MemoEntry, options: { refresh?: boolean } = {}): Promise<void> {
+		await this.updateMemoStatus(memo, "archived", !memo.archivedAt, options);
 	}
 
-	async pinMemoEntry(memo: MemoEntry): Promise<void> {
-		await this.updateMemoStatus(memo, "pinned", !memo.pinnedAt);
+	async pinMemoEntry(memo: MemoEntry, options: { refresh?: boolean } = {}): Promise<void> {
+		await this.updateMemoStatus(memo, "pinned", !memo.pinnedAt, options);
 	}
 
 	async permanentlyDeleteMarkedMemos(memos: MemoEntry[]): Promise<void> {
@@ -360,13 +375,14 @@ export default class MemosViewPlugin extends Plugin {
 					: frontmatter
 				: normalizedBody;
 
+			this.suppressVaultRefresh(file.path);
 			await this.app.vault.modify(file, nextFileContent);
 		}
 
 		await this.refreshAllMemosViews();
 	}
 
-	private async updateMemoStatus(memo: MemoEntry, key: MemoStatusKey, enabled: boolean): Promise<void> {
+	private async updateMemoStatus(memo: MemoEntry, key: MemoStatusKey, enabled: boolean, options: { refresh?: boolean } = {}): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(memo.sourcePath);
 		if (!(file instanceof TFile)) {
 			new Notice("Source file no longer exists.");
@@ -411,10 +427,12 @@ export default class MemosViewPlugin extends Plugin {
 				: frontmatter
 			: nextBody;
 
+		this.suppressVaultRefresh(file.path);
 		await this.app.vault.modify(file, nextFileContent);
-		await this.refreshAllMemosViews();
+		if (options.refresh !== false) {
+			await this.refreshAllMemosViews();
+		}
 	}
-
 	private scheduleBoundFileActivation(file: TFile | null): void {
 		if (this.pendingBoundFileTimer !== null) {
 			window.clearTimeout(this.pendingBoundFileTimer);
