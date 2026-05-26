@@ -180,6 +180,29 @@ export class MemosView extends ItemView {
 			}
 			this.cancelInlineEditing();
 		});
+
+		this.sidebarOverlayEl = shellEl.createDiv({ cls: "memos-sidebar-overlay" });
+		this.sidebarOverlayEl.addEventListener("click", () => {
+			this.closeSidebar();
+		});
+
+		const layoutEl = shellEl.createDiv({ cls: "memos-layout" });
+		const sidebarEl = layoutEl.createDiv({ cls: "memos-sidebar" });
+		this.sidebarEl = sidebarEl;
+		sidebarEl.createEl("div", {
+			cls: "memos-brand",
+			text: this.plugin.settings.displayName || "memos",
+		});
+
+		const mainEl = layoutEl.createDiv({ cls: "memos-main" });
+		const mainHeaderEl = mainEl.createDiv({ cls: "memos-main-header" });
+		this.renderTopbar(mainHeaderEl);
+		const composerEl = this.renderComposer(mainHeaderEl);
+		const bodyEl = mainEl.createDiv({ cls: "memos-main-body" });
+		const backToTopButtonEl = this.createBackToTopButton(mainEl, bodyEl);
+		this.memoStreamContainerEl = bodyEl;
+		this.bindMainInteractions(shellEl, composerEl, bodyEl, backToTopButtonEl);
+
 		this.memos = await loadMemosFromDailyNotes(
 			this.app,
 			this.plugin.getDailyNotesFolder(),
@@ -197,14 +220,8 @@ export class MemosView extends ItemView {
 			this.viewFilter,
 		);
 
-		this.sidebarOverlayEl = shellEl.createDiv({ cls: "memos-sidebar-overlay" });
-		this.sidebarOverlayEl.addEventListener("click", () => {
-			this.closeSidebar();
-		});
-
-		const layoutEl = shellEl.createDiv({ cls: "memos-layout" });
-		this.renderSidebar(
-			layoutEl,
+		this.populateSidebar(
+			sidebarEl,
 			viewModel.totalMemos,
 			viewModel.totalTags,
 			viewModel.totalDays,
@@ -213,16 +230,7 @@ export class MemosView extends ItemView {
 			viewModel.tagStats,
 			this.getStatusCounts(),
 		);
-
-		const mainEl = layoutEl.createDiv({ cls: "memos-main" });
-		const mainHeaderEl = mainEl.createDiv({ cls: "memos-main-header" });
-		this.renderTopbar(mainHeaderEl);
-		const composerEl = this.renderComposer(mainHeaderEl);
-		const bodyEl = mainEl.createDiv({ cls: "memos-main-body" });
-		const backToTopButtonEl = this.createBackToTopButton(mainEl, bodyEl);
-		this.memoStreamContainerEl = bodyEl;
 		this.renderMemoStream(bodyEl, viewModel.filteredMemos);
-		this.bindMainInteractions(shellEl, composerEl, bodyEl, backToTopButtonEl);
 	}
 
 	private openSidebar(): void {
@@ -235,8 +243,8 @@ export class MemosView extends ItemView {
 		this.sidebarOverlayEl?.removeClass("is-visible");
 	}
 
-	private renderSidebar(
-		parentEl: HTMLElement,
+	private populateSidebar(
+		sidebarEl: HTMLElement,
 		totalMemos: number,
 		totalTags: number,
 		totalDays: number,
@@ -248,8 +256,7 @@ export class MemosView extends ItemView {
 		tagStats: Array<{ tag: string; count: number }>,
 		statusCounts: Record<MemosStatusFilter, number>,
 	): void {
-		const sidebarEl = parentEl.createDiv({ cls: "memos-sidebar" });
-		this.sidebarEl = sidebarEl;
+		sidebarEl.empty();
 		sidebarEl.style.setProperty("--memos-heatmap-columns", String(heatmap.length));
 		sidebarEl.createEl("div", {
 			cls: "memos-brand",
@@ -650,15 +657,27 @@ export class MemosView extends ItemView {
 		}
 
 		const visibleMemos = memos.slice(0, this.visibleMemoCount);
+		const batchSize = 10;
 		let lastDayKey = "";
-		visibleMemos.forEach((memo) => {
-			if (memo.dayKey !== lastDayKey) {
-				lastDayKey = memo.dayKey;
-				const dayHeadEl = listEl.createDiv({ cls: "memos-day-head" });
-				dayHeadEl.createSpan({ cls: "memos-day-head-label", text: formatReadableDay(memo.dayKey) });
+		let index = 0;
+
+		const renderBatch = (): void => {
+			const end = Math.min(index + batchSize, visibleMemos.length);
+			for (; index < end; index++) {
+				const memo = visibleMemos[index]!;
+				if (memo.dayKey !== lastDayKey) {
+					lastDayKey = memo.dayKey;
+					const dayHeadEl = listEl.createDiv({ cls: "memos-day-head" });
+					dayHeadEl.createSpan({ cls: "memos-day-head-label", text: formatReadableDay(memo.dayKey) });
+				}
+				void this.renderMemoCard(listEl, memo);
 			}
-			void this.renderMemoCard(listEl, memo);
-		});
+			if (index < visibleMemos.length) {
+				setTimeout(renderBatch, 0);
+			}
+		};
+
+		renderBatch();
 
 		if (visibleMemos.length < memos.length) {
 			const loadMoreWrapEl = listEl.createDiv({ cls: "memos-load-more-wrap" });
@@ -708,7 +727,26 @@ export class MemosView extends ItemView {
 			this.plugin.settings.memoStoreMode,
 			this.plugin.settings.boundFilePath || undefined,
 		);
+		this.refreshSidebarTagTree();
 		this.renderFilteredMemoStream();
+	}
+
+	private refreshSidebarTagTree(): void {
+		const treeEl = this.sidebarEl?.querySelector(".memos-filter-tree");
+		if (!treeEl) {
+			return;
+		}
+		const tagCounts = new Map<string, number>();
+		for (const memo of this.memos) {
+			for (const tag of memo.tags) {
+				tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+			}
+		}
+		const tagStats = [...tagCounts.entries()]
+			.map(([tag, count]) => ({ tag, count }))
+			.sort((left, right) => left.tag.localeCompare(right.tag, undefined, { numeric: true }));
+		treeEl.empty();
+		this.renderTagTree(treeEl as HTMLElement, buildTagTree(tagStats), 0);
 	}
 
 	private handleInlineEditorEscape(event: KeyboardEvent): boolean {
@@ -1342,7 +1380,32 @@ export class MemosView extends ItemView {
 		const contentEl = cardEl.createDiv({ cls: "memos-card-content markdown-rendered" });
 		await MarkdownRenderer.render(this.app, memo.content, contentEl, memo.sourcePath, this);
 		this.bindRenderedInternalLinks(contentEl, memo.sourcePath);
+		this.bindCardTagClick(contentEl);
 		this.highlightSearchMatches(contentEl);
+	}
+
+	private bindCardTagClick(contentEl: HTMLElement): void {
+		contentEl.addEventListener("click", (event) => {
+			const target = event.target as HTMLElement | null;
+			const tagEl = target?.closest("a.tag");
+			if (!(tagEl instanceof HTMLAnchorElement) || !contentEl.contains(tagEl)) {
+				return;
+			}
+			event.preventDefault();
+			event.stopPropagation();
+			const tagHref = tagEl.getAttribute("href") ?? tagEl.textContent ?? "";
+			const tag = tagHref.startsWith("#") ? tagHref : `#${tagHref}`;
+			if (!tag) {
+				return;
+			}
+			this.activeTag = tag;
+			this.expandTagAncestors(tag);
+			this.resetVisibleMemoCount();
+			this.updateTagFilterButtonStates();
+			this.updateTitleDateState();
+			this.closeSidebar();
+			this.renderFilteredMemoStream();
+		});
 	}
 
 	bindRenderedInternalLinks(contentEl: HTMLElement, sourcePath: string): void {
@@ -1964,14 +2027,29 @@ export class MemosView extends ItemView {
 			panelEl.setAttr("hidden", "hidden");
 		};
 
+		const positionPanel = (): void => {
+			const caretOffset = this.measureTextareaCaretOffset(textareaEl);
+			const verticalGap = 8;
+			const nextTop = Math.min(
+				Math.max(caretOffset.top + caretOffset.lineHeight + verticalGap, verticalGap),
+				Math.max(verticalGap, textareaEl.clientHeight - 16),
+			);
+			panelEl.style.removeProperty("width");
+			panelEl.style.left = "0";
+			panelEl.style.top = `${nextTop}px`;
+		};
+
 		const updatePanel = (): void => {
 			panelEl.empty();
 			if (!matchingTags.length) {
-				hidePanel();
+				panelEl.removeAttribute("hidden");
+				positionPanel();
+				const emptyEl = panelEl.createDiv({ cls: "memos-tag-suggest-empty" });
+				emptyEl.setText(t("view.noTags"));
 				return;
 			}
 			panelEl.removeAttribute("hidden");
-			this.positionWikilinkSuggestPanel(textareaEl, panelEl);
+			positionPanel();
 			matchingTags.forEach((tag, index) => {
 				const itemEl = panelEl.createEl("button", {
 					cls: `memos-tag-suggest-item${index === selectedIndex ? " is-selected" : ""}`,

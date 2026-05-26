@@ -10,6 +10,7 @@ interface TranslationStrings {
 		tags: string;
 		days: string;
 		allTags: string;
+		noTags: string;
 		all: string;
 		archived: string;
 		deleted: string;
@@ -130,6 +131,7 @@ const en: TranslationStrings = {
 		tags: "Tags",
 		days: "Days",
 		allTags: "All tags",
+		noTags: "No tags found",
 		all: "All",
 		archived: "Archived",
 		deleted: "Deleted",
@@ -250,6 +252,7 @@ const zhCN: TranslationStrings = {
 		tags: "标签",
 		days: "天数",
 		allTags: "全部标签",
+		noTags: "没有标签",
 		all: "全部",
 		archived: "归档",
 		deleted: "回收站",
