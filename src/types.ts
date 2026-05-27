@@ -5,6 +5,7 @@ export interface MemosPluginSettings {
 	displayName: string;
 	timestampFormat: string;
 	memoStoreMode: "daily" | "yearly";
+	memoReadMode: "all" | "daily" | "yearly";
 }
 
 export interface MemoEntry {

@@ -208,6 +208,7 @@ export class MemosView extends ItemView {
 			this.plugin.getDailyNotesFolder(),
 			this.plugin.settings.timestampFormat,
 			this.plugin.settings.memoStoreMode,
+			this.plugin.settings.memoReadMode,
 			this.plugin.settings.boundFilePath || undefined,
 		);
 		const viewModel = buildViewModel(
@@ -459,6 +460,7 @@ export class MemosView extends ItemView {
 			this.statusFilter = this.statusFilter === filter ? "active" : filter;
 			this.resetVisibleMemoCount();
 			this.updateStatusFilterButtonStates();
+			this.refreshSidebarTagTree();
 			this.closeSidebar();
 			this.renderFilteredMemoStream();
 		});
@@ -749,6 +751,7 @@ export class MemosView extends ItemView {
 			this.plugin.getDailyNotesFolder(),
 			this.plugin.settings.timestampFormat,
 			this.plugin.settings.memoStoreMode,
+			this.plugin.settings.memoReadMode,
 			this.plugin.settings.boundFilePath || undefined,
 		);
 		this.refreshSidebarStatusCounts();
@@ -803,7 +806,7 @@ export class MemosView extends ItemView {
 			return;
 		}
 		const tagCounts = new Map<string, number>();
-		for (const memo of this.memos) {
+		for (const memo of this.getScopedMemos()) {
 			for (const tag of memo.tags) {
 				tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
 			}
@@ -813,6 +816,19 @@ export class MemosView extends ItemView {
 			.sort((left, right) => left.tag.localeCompare(right.tag, undefined, { numeric: true }));
 		treeEl.empty();
 		this.renderTagTree(treeEl as HTMLElement, buildTagTree(tagStats), 0);
+	}
+
+	private getScopedMemos(): MemoEntry[] {
+		switch (this.statusFilter) {
+			case "archived":
+				return this.memos.filter((memo) => Boolean(memo.archivedAt));
+			case "deleted":
+				return this.memos.filter((memo) => Boolean(memo.deletedAt));
+			case "all":
+			case "active":
+			default:
+				return this.memos.filter((memo) => !memo.archivedAt && !memo.deletedAt);
+		}
 	}
 
 	private handleInlineEditorEscape(event: KeyboardEvent): boolean {
@@ -1228,36 +1244,27 @@ export class MemosView extends ItemView {
 		nodes.forEach((node) => {
 			const hasChildren = node.children.length > 0;
 			const isCollapsed = this.collapsedTagPaths.has(node.path);
-			const rowEl = parentEl.createDiv({ cls: "memos-filter-tree-row" });
-			rowEl.style.setProperty("--memos-tag-depth", String(depth));
 
-			const guideEl = hasChildren
-				? rowEl.createEl("button", {
-						cls: `memos-filter-guide has-toggle ${isCollapsed ? "is-collapsed" : "is-expanded"}`,
-						attr: {
-							type: "button",
-							"aria-label": isCollapsed ? `Expand ${node.name}` : `Collapse ${node.name}`,
-							"aria-expanded": String(!isCollapsed),
-						},
-				  })
-				: rowEl.createDiv({ cls: "memos-filter-guide" });
-			if (hasChildren) {
-				guideEl.addEventListener("click", (event) => {
-					event.preventDefault();
-					event.stopPropagation();
-					this.toggleTagTreeNode(node.path);
-				});
-			}
-
-			const button = rowEl.createEl("button", {
-				cls: `memos-filter-item memos-filter-item-tree ${this.activeTag === node.path ? "is-active" : ""}${node.count === 0 ? " is-branch" : ""}` ,
+			const button = parentEl.createEl("button", {
+				cls: `memos-filter-item${this.activeTag === node.path ? " is-active" : ""}${node.count === 0 ? " is-branch" : ""}`,
 				attr: {
 					"data-tag-path": node.path,
 				},
 			});
+			button.style.setProperty("--memos-tag-depth", String(depth));
+
 			const labelEl = button.createSpan({ cls: "memos-filter-label" });
 			const iconEl = labelEl.createSpan({ cls: "memos-filter-icon" });
-			setIcon(iconEl, "tag");
+			if (hasChildren) {
+				iconEl.addClass("has-toggle", isCollapsed ? "is-collapsed" : "is-expanded");
+				iconEl.addEventListener("click", (event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					this.toggleTagTreeNode(node.path);
+				});
+			} else {
+				setIcon(iconEl, "tag");
+			}
 			labelEl.createSpan({ text: node.name });
 			button.createSpan({ cls: "memos-filter-count", text: String(node.count) });
 			button.addEventListener("click", () => {
@@ -1388,13 +1395,19 @@ export class MemosView extends ItemView {
 
 		const metaEl = cardEl.createDiv({ cls: "memos-card-meta" });
 		const metaInfoEl = metaEl.createDiv({ cls: "memos-card-meta-info" });
+		const isYearlySource = /^\d{4}$/.test(memo.sourceBasename);
 		const sourceButton = metaInfoEl.createEl("button", {
 			cls: "memos-source-button",
-			text: memo.sourceBasename,
+			text: isYearlySource ? memo.dayKey : memo.sourceBasename,
 		});
 		this.highlightSearchMatches(sourceButton);
 		sourceButton.addEventListener("click", () => {
-			void this.plugin.openSourceFile(memo.sourcePath);
+			if (isYearlySource) {
+				const headingText = formatYearlyDayHeading(memo.dayKey);
+				void this.plugin.openSourceFileAtHeading(memo.sourcePath, headingText);
+			} else {
+				void this.plugin.openSourceFile(memo.sourcePath);
+			}
 		});
 		const timestampButton = metaInfoEl.createEl("button", {
 			cls: "memos-timestamp-button",
@@ -2544,6 +2557,13 @@ function createLocalTimestampForFileName(date: Date): string {
 
 const WEEKDAY_NAMES_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const WEEKDAY_NAMES_ZH = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+const WEEKDAY_SHORT_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+function formatYearlyDayHeading(dayKey: string): string {
+	const date = new Date(`${dayKey}T00:00:00`);
+	const weekday = WEEKDAY_SHORT_ZH[date.getDay()] ?? "";
+	return `${dayKey} ${weekday}`;
+}
 
 function formatReadableDay(dayKey: string): string {
 	const today = new Date();

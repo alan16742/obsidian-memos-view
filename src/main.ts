@@ -205,6 +205,16 @@ export default class MemosViewPlugin extends Plugin {
 		});
 	}
 
+	async openSourceFileAtHeading(path: string, heading: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			new Notice(t("notices.sourceFileNoLongerExists"));
+			return;
+		}
+
+		await this.app.workspace.openLinkText(`${file.basename}#${heading}`, file.path, false);
+	}
+
 	async loadDailyNotesConfig(): Promise<void> {
 		const configPath = normalizePath(`${this.app.vault.configDir}/daily-notes.json`);
 		try {

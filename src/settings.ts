@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: MemosPluginSettings = {
 	displayName: "",
 	timestampFormat: "HH:mm",
 	memoStoreMode: "daily",
+	memoReadMode: "all",
 };
 
 export class MemosSettingTab extends PluginSettingTab {
@@ -74,6 +75,22 @@ export class MemosSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.memoStoreMode)
 					.onChange(async (value) => {
 						this.plugin.settings.memoStoreMode = value as "daily" | "yearly";
+						await this.plugin.saveSettings();
+						await this.plugin.refreshAllMemosViews();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("settings.memoReadMode"))
+			.setDesc(t("settings.memoReadModeDesc"))
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("all", t("settings.memoReadModeAll"))
+					.addOption("daily", t("settings.memoReadModeDaily"))
+					.addOption("yearly", t("settings.memoReadModeYearly"))
+					.setValue(this.plugin.settings.memoReadMode)
+					.onChange(async (value) => {
+						this.plugin.settings.memoReadMode = value as "all" | "daily" | "yearly";
 						await this.plugin.saveSettings();
 						await this.plugin.refreshAllMemosViews();
 					}),

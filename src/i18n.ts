@@ -108,6 +108,11 @@ interface TranslationStrings {
 		memoStoreModeDailyDesc: string;
 		memoStoreModeYearly: string;
 		memoStoreModeYearlyDesc: string;
+		memoReadMode: string;
+		memoReadModeDesc: string;
+		memoReadModeAll: string;
+		memoReadModeDaily: string;
+		memoReadModeYearly: string;
 	};
 	share: {
 		copyImage: string;
@@ -229,6 +234,11 @@ const en: TranslationStrings = {
 		memoStoreModeDailyDesc: "Save each memo to its daily note file (YYYY-MM-DD.md).",
 		memoStoreModeYearly: "Yearly file",
 		memoStoreModeYearlyDesc: "Save memos to a yearly file (YYYY.md), organized by date headings.",
+		memoReadMode: "Memo read mode",
+		memoReadModeDesc: "Choose which files to read memos from: all supported files, only daily notes (YYYY-MM-DD), or only yearly files (YYYY).",
+		memoReadModeAll: "All files",
+		memoReadModeDaily: "Daily notes only",
+		memoReadModeYearly: "Yearly files only",
 	},
 	share: {
 		copyImage: "Copy image",
@@ -350,6 +360,11 @@ const zhCN: TranslationStrings = {
 		memoStoreModeDailyDesc: "将备忘录保存到对应的每日笔记文件（YYYY-MM-DD.md）。",
 		memoStoreModeYearly: "年度文件",
 		memoStoreModeYearlyDesc: "将备忘录保存到年度文件（YYYY.md），按日期标题组织。",
+		memoReadMode: "备忘录读取模式",
+		memoReadModeDesc: "选择从哪些文件中读取备忘录：所有支持的文件、仅每日笔记（YYYY-MM-DD）或仅年度文件（YYYY）。",
+		memoReadModeAll: "全部文件",
+		memoReadModeDaily: "仅每日笔记",
+		memoReadModeYearly: "仅年度文件",
 	},
 	share: {
 		copyImage: "复制图片",

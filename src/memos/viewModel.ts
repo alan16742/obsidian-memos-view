@@ -68,7 +68,7 @@ export function buildViewModel(
 	const scopedMemos = memos.filter((memo) => matchesStatusFilter(memo, statusFilter));
 	const filteredMemos = scopedMemos
 		.filter((memo) => {
-			const matchesTag = !activeTag || memo.tags.includes(activeTag);
+			const matchesTag = !activeTag || memo.tags.some((tag) => tag === activeTag || tag.startsWith(`${activeTag}/`));
 			const matchesDay = !activeDayKey || memo.dayKey === activeDayKey;
 			const matchesSearch =
 				!normalizedSearch ||
@@ -151,7 +151,7 @@ function matchesViewFilter(memo: MemoEntry, viewFilter: MemosViewFilter): boolea
 		case "has-image":
 			return /!\[\[.*?\]\]|!\[.*?\]\(.*?\)/.test(memo.content);
 		case "has-link":
-			return /\[.*?\]\(.*?\)|\[\[.*?\]\]/.test(memo.content);
+			return /\[.*?\]\(.*?\)|\[\[.*?\]\]|https?:\/\/\S+/i.test(memo.content);
 		case "none":
 		default:
 			return true;
