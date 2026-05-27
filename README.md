@@ -1,90 +1,111 @@
-# Obsidian Sample Plugin
+# Memos View
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+A [flomo](https://flomoapp.com/)-inspired memos stream plugin for [Obsidian](https://obsidian.md). It turns your daily notes (or yearly files) into a beautiful, searchable, and filterable memo timeline — all stored locally in your vault as plain Markdown.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&query=%24%5B%22memos-view%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json)
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## Features
 
-## First time developing plugins?
+- **Memo stream view** — A dedicated view that displays all your memos in a chronological stream, grouped by day.
+- **Quick capture** — Write and save memos directly from the composer. New memos are appended to today's daily note (or yearly file) as timestamped list items.
+- **Daily notes & yearly files** — Choose between storing memos in daily note files (`YYYY-MM-DD.md`) or yearly files (`YYYY.md`) organized by date headings.
+- **Heatmap calendar** — A GitHub-style contribution heatmap in the sidebar shows your memo activity over the past 12 weeks. Hover to preview, click to filter.
+- **Tag tree** — A collapsible nested tag tree in the sidebar for quick tag-based filtering.
+- **Search** — Full-text search across memo content, source file names, and tags with highlighted matches.
+- **Sort & filter** — Sort by created or edited time. Filter by status (active, archived, deleted) or by view (today, this week, to-do, has tags, has image, has link).
+- **Pin, archive, delete** — Pin important memos to the top, archive completed ones, or soft-delete memos. Permanently purge deleted memos when ready.
+- **Inline editing** — Double-click any memo card to edit it inline, or use the "Edit" action from the context menu.
+- **Random walk** — Discover forgotten memos with a random walk modal that surfaces a random memo from your collection.
+- **Quote** — Quote any memo into the composer as a callout block.
+- **Rich composer** — Formatting toolbar with bold, italic, strikethrough, task lists, bullet lists, numbered lists, and image insertion. Selection toolbar appears when text is selected.
+- **Wikilink autocomplete** — Type `[[` to search and insert wikilinks to files, headings, paragraphs, and blocks. Supports `#` anchor navigation.
+- **Tag autocomplete** — Type `#` to get tag suggestions from your existing memos.
+- **Image paste** — Paste images from clipboard directly into memos. They are saved as attachments and embedded automatically.
+- **Share as image** — Generate beautiful shareable images from any memo with 6 built-in card styles (Daily, Ticket, Phone, Memo, Clean, Plain). Copy to clipboard or save as PNG.
+- **Bound file** — Bind a specific file so that opening it automatically switches to the Memos view.
+- **i18n** — English and Simplified Chinese UI translations.
 
-Quick starting guide for new plugin devs:
+## Commands
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+| Command | Description |
+|---|---|
+| **Open memos view** | Opens the Memos view in the active leaf |
+| **Refresh memos view** | Reloads all memos from daily notes |
+| **Random walk memo** | Opens a random memo in a modal |
 
-## Releasing new releases
+## Settings
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+| Setting | Description |
+|---|---|
+| **Display name** | Shown in the sidebar header of the Memos view |
+| **Timestamp format** | Pattern for memo timestamps (e.g. `HH:mm`, `HH:mm:ss`) |
+| **Bound file** | When this file is opened, the editor leaf switches to the Memos view |
+| **Memo storage mode** | Store memos in daily notes (`YYYY-MM-DD.md`) or yearly files (`YYYY.md`) |
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+## How memos are stored
 
-## Adding your plugin to the community plugin list
+Memos are stored as timestamped list items in your Markdown files, so they remain fully compatible with Obsidian's native editing and search.
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+**Daily note example** (`2025-05-27.md`):
 
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+```markdown
+- 09:15 Had an idea for the new feature #project/idea
+  Some additional thoughts here.
+- 14:30 Meeting notes with the team
+  - Discussed roadmap
+  - Agreed on timeline
 ```
 
-If you have multiple URLs, you can also do:
+**Yearly file example** (`2025.md`):
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
+```markdown
+# 2025
+
+## 2025-05-27 周二
+
+- 09:15 Had an idea for the new feature #project/idea
+- 14:30 Meeting notes with the team
 ```
 
-## API Documentation
+Status markers (archived, deleted, pinned) are stored inline using Obsidian's property syntax:
 
-See https://docs.obsidian.md
+```markdown
+- 09:15 Some memo content [pinned::20250527101500]
+```
+
+## Installation
+
+### From Obsidian Community Plugins
+
+1. Open **Settings → Community plugins**
+2. Disable **Restricted mode** if prompted
+3. Click **Browse** and search for "Memos View"
+4. Click **Install**, then **Enable**
+
+### Manual installation
+
+1. Download `main.js`, `styles.css`, and `manifest.json` from the [latest release](https://github.com/likemuuxi/obsidian-memos-view/releases)
+2. Copy them to `<vault>/.obsidian/plugins/memos-view/`
+3. Enable the plugin in **Settings → Community plugins**
+
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+- `npm run dev` — Start esbuild in watch mode
+- `npm run build` — Production build
+
+## Support
+
+If you find this plugin helpful, consider supporting the author:
+
+<a href="https://ko-fi.com/muuxi" target="_blank">
+  <img src="https://img.shields.io/badge/Ko--fi-Support-orange?logo=ko-fi&logoColor=white" alt="Ko-fi">
+</a>
+
+## License
+
+[MIT](LICENSE)
