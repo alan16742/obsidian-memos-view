@@ -48,6 +48,8 @@ interface TranslationStrings {
 		insertMention: string;
 		insertTag: string;
 		insertImage: string;
+		attachmentPickerSearch: string;
+		attachmentPickerEmpty: string;
 		boldSelection: string;
 		italicSelection: string;
 		strikeSelection: string;
@@ -126,6 +128,13 @@ interface TranslationStrings {
 		memoStoreHeadingDesc: string;
 		memoReadHeading: string;
 		memoReadHeadingDesc: string;
+		shareTitle: string;
+		shareTitleDesc: string;
+		shareTitlePlaceholder: string;
+		imageEmbedStyle: string;
+		imageEmbedStyleDesc: string;
+		imageEmbedStyleWikilink: string;
+		imageEmbedStyleMarkdown: string;
 	};
 	share: {
 		copyImage: string;
@@ -187,6 +196,8 @@ const en: TranslationStrings = {
 		insertMention: "Insert mention",
 		insertTag: "Insert tag",
 		insertImage: "Insert image",
+		attachmentPickerSearch: "Search attachments...",
+		attachmentPickerEmpty: "No matching attachments found.",
 		boldSelection: "Bold selection",
 		italicSelection: "Italic selection",
 		strikeSelection: "Strike selection",
@@ -265,6 +276,13 @@ const en: TranslationStrings = {
 		memoStoreHeadingDesc: "When using daily notes, memos will be written under this heading. Leave empty to write at the top of the file.",
 		memoReadHeading: "Read heading",
 		memoReadHeadingDesc: "Only read memos under this heading from daily notes. Leave empty to read from the entire file.",
+		shareTitle: "Share card title",
+		shareTitleDesc: "Customize the title displayed at the top of the share card. Use {date} to show the memo date, or enter any text. Leave empty to show \"memos\".",
+		shareTitlePlaceholder: "e.g. {date} or My Notes",
+		imageEmbedStyle: "Image embed format",
+		imageEmbedStyleDesc: "Choose the format used when inserting images: Wikilink (![[image.png]]) or Markdown (![alt](image.png)).",
+		imageEmbedStyleWikilink: "Wikilink  ![[...]]",
+		imageEmbedStyleMarkdown: "Markdown  ![...](...)",
 	},
 	share: {
 		copyImage: "Copy image",
@@ -326,6 +344,8 @@ const zhCN: TranslationStrings = {
 		insertMention: "插入提及",
 		insertTag: "插入标签",
 		insertImage: "插入图片",
+		attachmentPickerSearch: "搜索附件...",
+		attachmentPickerEmpty: "没有找到匹配的附件。",
 		boldSelection: "加粗",
 		italicSelection: "斜体",
 		strikeSelection: "删除线",
@@ -404,6 +424,13 @@ const zhCN: TranslationStrings = {
 		memoStoreHeadingDesc: "使用每日笔记时，备忘录将写入到该标题下方。留空则写入文件顶部。",
 		memoReadHeading: "读取标题",
 		memoReadHeadingDesc: "仅读取每日笔记中该标题下的备忘录。留空则读取整个文件。",
+		shareTitle: "分享卡片标题",
+		shareTitleDesc: "自定义分享卡片顶部显示的标题。使用 {date} 显示备忘录日期，或输入任意文本。留空则显示 \"memos\"。",
+		shareTitlePlaceholder: "例如 {date} 或 我的笔记",
+		imageEmbedStyle: "图片插入格式",
+		imageEmbedStyleDesc: "选择插入图片时使用的格式：Wikilink（![[image.png]]）或 Markdown（![alt](image.png)）。",
+		imageEmbedStyleWikilink: "Wikilink  ![[...]]",
+		imageEmbedStyleMarkdown: "Markdown  ![...](...)",
 	},
 	share: {
 		copyImage: "复制图片",

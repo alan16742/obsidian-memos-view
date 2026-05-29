@@ -53,7 +53,7 @@ const SHARE_STYLES: MemoShareStyle[] = [
 		accent: "#b7c66a",
 		border: "#d9dfbd",
 		shadow: "0 32px 72px rgba(81, 91, 54, 0.18)",
-		title: "12 / 03",
+		title: "memos",
 	},
 	{
 		id: "memo",
@@ -97,21 +97,31 @@ const DEFAULT_SHARE_STYLE = SHARE_STYLES[1] as MemoShareStyle;
 const SHARE_IMAGE_WIDTH = 1100;
 const SHARE_CARD_WIDTH = 900;
 
-export function openMemoShareModal(app: App, memo: MemoEntry): void {
-	new MemoShareModal(app, memo).open();
+function resolveShareTitle(shareTitle: string, memo: MemoEntry): string {
+	const trimmed = shareTitle.trim();
+	if (!trimmed) {
+		return "memos";
+	}
+	return trimmed.replace(/\{date\}/g, memo.dayKey);
+}
+
+export function openMemoShareModal(app: App, memo: MemoEntry, shareTitle: string): void {
+	new MemoShareModal(app, memo, shareTitle).open();
 }
 
 class MemoShareModal extends Modal {
 	private readonly memo: MemoEntry;
+	private readonly customTitle: string;
 	private readonly markdownRenderComponent = new Component();
 	private selectedStyle: MemoShareStyle = DEFAULT_SHARE_STYLE;
 	private previewWrapEl: HTMLElement | null = null;
 	private styleListEl: HTMLElement | null = null;
 	private previewRenderId = 0;
 
-	constructor(app: App, memo: MemoEntry) {
+	constructor(app: App, memo: MemoEntry, shareTitle: string) {
 		super(app);
 		this.memo = memo;
+		this.customTitle = shareTitle;
 	}
 
 	onOpen(): void {
@@ -220,7 +230,7 @@ class MemoShareModal extends Modal {
 
 		const previewEl = this.previewWrapEl.createDiv({ cls: "memos-share-preview" });
 		const previewInnerEl = previewEl.createDiv({ cls: "memos-share-preview-inner" });
-		previewInnerEl.innerHTML = buildShareCardHtml(this.memo, this.selectedStyle, "preview", "");
+		previewInnerEl.innerHTML = buildShareCardHtml(this.memo, this.selectedStyle, "preview", "", resolveShareTitle(this.customTitle, this.memo));
 		previewEl.style.position = "absolute";
 		previewEl.style.visibility = "hidden";
 		previewEl.style.pointerEvents = "none";
@@ -304,7 +314,7 @@ class MemoShareModal extends Modal {
 		}
 
 		this.applyStyleToShareCard(cardEl, this.selectedStyle);
-		brandEl.setText(`- ${this.selectedStyle.title} -`);
+		brandEl.setText(`- ${resolveShareTitle(this.customTitle, this.memo)} -`);
 		return true;
 	}
 
@@ -341,6 +351,7 @@ class MemoShareModal extends Modal {
 			this.memo,
 			this.selectedStyle,
 			this.markdownRenderComponent,
+			resolveShareTitle(this.customTitle, this.memo),
 		);
 	}
 }
@@ -350,11 +361,12 @@ async function exportShareCardDomToBlob(
 	memo: MemoEntry,
 	style: MemoShareStyle,
 	component: Component,
+	resolvedTitle = "memos",
 ): Promise<Blob> {
 	const surfaceEl = document.createElement("div");
 	surfaceEl.addClass("memos-share-export-surface");
 	surfaceEl.style.setProperty("--share-export-bg", style.background);
-	surfaceEl.innerHTML = buildShareCardHtml(memo, style, "image", "");
+	surfaceEl.innerHTML = buildShareCardHtml(memo, style, "image", "", resolvedTitle);
 
 	const contentEl = surfaceEl.querySelector(".memos-share-card-content");
 	if (!(contentEl instanceof HTMLElement)) {
@@ -401,6 +413,7 @@ const TRANSPARENT_IMAGE_PLACEHOLDER =
 function renderShareImageToPngBlob(
 	memo: MemoEntry,
 	style: MemoShareStyle,
+	resolvedTitle = "memos",
 ): Promise<Blob> {
 	const scale = 2;
 	const contentLayout = layoutMemoText(memo.content, SHARE_CARD_WIDTH - 112);
@@ -425,7 +438,7 @@ function renderShareImageToPngBlob(
 	context.font = "800 30px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
 	context.textAlign = "center";
 	context.textBaseline = "top";
-	context.fillText(`- ${style.title} -`, SHARE_IMAGE_WIDTH / 2, cardY + 68);
+	context.fillText(`- ${resolvedTitle} -`, SHARE_IMAGE_WIDTH / 2, cardY + 68);
 
 	const contentX = cardX + 56;
 	const contentWidth = SHARE_CARD_WIDTH - 112;
@@ -1096,12 +1109,13 @@ function buildShareCardHtml(
 	style: MemoShareStyle,
 	mode: "preview" | "image",
 	contentHtml = renderMemoContentHtml(memo.content),
+	resolvedTitle = style.title,
 ): string {
 	const scale = mode === "preview" ? "memos-share-card-preview" : "memos-share-card-image";
 	return [
 		`<section class="memos-share-card ${scale}" style="--share-bg:${style.cardBackground};--share-text:${style.text};--share-muted:${style.muted};--share-accent:${style.accent};--share-border:${style.border};--share-shadow:${style.shadow};">`,
 		"<div class=\"memos-share-card-body\">",
-		`<div class="memos-share-card-brand">- ${escapeHtml(style.title)} -</div>`,
+		`<div class="memos-share-card-brand">- ${escapeHtml(resolvedTitle)} -</div>`,
 		"<div class=\"memos-share-card-rule\"></div>",
 		`<article class="memos-share-card-content markdown-rendered">${contentHtml}</article>`,
 		"<footer class=\"memos-share-card-footer\">",

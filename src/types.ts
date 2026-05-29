@@ -8,6 +8,8 @@ export interface MemosPluginSettings {
 	memoStoreHeading: string;
 	memoReadMode: "all" | "daily" | "yearly";
 	memoReadHeading: string;
+	shareTitle: string;
+	imageEmbedStyle: "wikilink" | "markdown";
 }
 
 export interface MemoEntry {

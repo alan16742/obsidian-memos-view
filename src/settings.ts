@@ -12,6 +12,8 @@ export const DEFAULT_SETTINGS: MemosPluginSettings = {
 	memoStoreHeading: "",
 	memoReadMode: "all",
 	memoReadHeading: "",
+	shareTitle: "",
+	imageEmbedStyle: "wikilink",
 };
 
 export class MemosSettingTab extends PluginSettingTab {
@@ -40,6 +42,33 @@ export class MemosSettingTab extends PluginSettingTab {
 					}),
 			);
 
+		new Setting(containerEl)
+			.setName(t("settings.shareTitle"))
+			.setDesc(t("settings.shareTitleDesc"))
+			.addText((text) =>
+				text
+					.setPlaceholder(t("settings.shareTitlePlaceholder"))
+					.setValue(this.plugin.settings.shareTitle)
+					.onChange(async (value) => {
+						this.plugin.settings.shareTitle = value.trim();
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("settings.imageEmbedStyle"))
+			.setDesc(t("settings.imageEmbedStyleDesc"))
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("wikilink", t("settings.imageEmbedStyleWikilink"))
+					.addOption("markdown", t("settings.imageEmbedStyleMarkdown"))
+					.setValue(this.plugin.settings.imageEmbedStyle)
+					.onChange(async (value) => {
+						this.plugin.settings.imageEmbedStyle = value as "wikilink" | "markdown";
+						await this.plugin.saveSettings();
+					}),
+			);
+			
 		new Setting(containerEl)
 			.setName(t("settings.timestampFormat"))
 			.setDesc(t("settings.timestampFormatDesc"))

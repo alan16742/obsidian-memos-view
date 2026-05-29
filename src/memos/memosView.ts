@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, Menu, Notice, WorkspaceLeaf, setIcon, type ViewStateResult } from "obsidian";
 import { Scope } from "obsidian";
 import type MemosViewPlugin from "../main";
-import { Modal, TFile } from "obsidian";
+import { Modal, TFile, type App } from "obsidian";
 import { VIEW_TYPE_MEMOS } from "../types";
 import type { MemosViewFilter, MemosSortOrder, MemosStatusFilter } from "../memos/viewModel";
 import { t } from "../i18n";
@@ -696,7 +696,7 @@ export class MemosView extends ItemView {
 			if (this.isComposerPreview) {
 				void this.renderComposerPreview(previewEl);
 			}
-		});
+		}, this.editingMemo?.sourcePath ?? this.plugin.getTodayDailyNotePath());
 		this.createToolDivider(toolsEl);
 		this.createToolButton(toolsEl, this.isComposerPreview ? "pencil" : "eye", t("view.togglePreview"), () => {
 			this.isComposerPreview = !this.isComposerPreview;
@@ -1106,6 +1106,7 @@ export class MemosView extends ItemView {
 		parentEl: HTMLElement,
 		textareaEl: HTMLTextAreaElement,
 		onChange: (value: string) => void,
+		sourcePath?: string,
 	): void {
 		this.createToolButton(parentEl, "square-check", t("view.insertTaskList"), () => {
 			this.toggleLinePrefix(textareaEl, "- [ ] ", onChange);
@@ -1118,7 +1119,10 @@ export class MemosView extends ItemView {
 		});
 		this.createToolDivider(parentEl);
 		this.createToolButton(parentEl, "image", t("view.insertImage"), () => {
-			this.insertIntoTextarea(textareaEl, "\n![]()", onChange);
+			const resolvedSourcePath = sourcePath ?? this.plugin.getTodayDailyNotePath();
+			new AttachmentPickerModal(this.app, resolvedSourcePath, this.plugin.settings.imageEmbedStyle, (markdownLink) => {
+				this.insertIntoTextarea(textareaEl, markdownLink, onChange);
+			}).open();
 		});
 	}
 
@@ -1212,6 +1216,10 @@ export class MemosView extends ItemView {
 		const relativePath = sourceDir && targetPath.startsWith(`${sourceDir}/`)
 			? targetPath.slice(sourceDir.length + 1)
 			: targetPath;
+		if (this.plugin.settings.imageEmbedStyle === "markdown") {
+			const fileName = file.basename || file.name;
+			return `\n![${fileName}](${relativePath})\n`;
+		}
 		return `\n![[${relativePath}]]\n`;
 	}
 
@@ -1808,7 +1816,7 @@ export class MemosView extends ItemView {
 		const toolsEl = footerEl.createDiv({ cls: "memos-inline-editor-tools" });
 		this.createFormattingTools(toolsEl, textareaEl, (value) => {
 			this.inlineEditorValue = value;
-		});
+		}, memo.sourcePath);
 		this.createToolDivider(toolsEl);
 		this.createToolButton(toolsEl, "eye", t("view.togglePreview"), () => {
 			this.isInlineEditorPreview = !this.isInlineEditorPreview;
@@ -2496,7 +2504,7 @@ export class MemosView extends ItemView {
 	}
 
 	private shareMemo(memo: MemoEntry): void {
-		openMemoShareModal(this.app, memo);
+		openMemoShareModal(this.app, memo, this.plugin.settings.shareTitle);
 	}
 
 	private async beginEditingMemo(memo: MemoEntry): Promise<void> {
@@ -2893,4 +2901,138 @@ function mapToNodes(nodes: Map<string, MutableTagTreeNode>): TagTreeNode[] {
 	});
 
 	return result.sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true }));
+}
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "bmp", "svg", "webp"]);
+
+class AttachmentPickerModal extends Modal {
+	private readonly onSelect: (markdownLink: string) => void;
+	private readonly sourcePath: string;
+	private readonly embedStyle: "wikilink" | "markdown";
+	private searchInput: HTMLInputElement | null = null;
+	private gridEl: HTMLElement | null = null;
+	private allFiles: TFile[] = [];
+	private filteredFiles: TFile[] = [];
+
+	constructor(app: App, sourcePath: string, embedStyle: "wikilink" | "markdown", onSelect: (markdownLink: string) => void) {
+		super(app);
+		this.sourcePath = sourcePath;
+		this.embedStyle = embedStyle;
+		this.onSelect = onSelect;
+	}
+
+	onOpen(): void {
+		this.modalEl.addClass("memos-attachment-picker-modal");
+		this.contentEl.empty();
+		this.allFiles = this.collectAttachmentFiles();
+		this.filteredFiles = this.allFiles;
+
+		const headerEl = this.contentEl.createDiv({ cls: "memos-attachment-picker-header" });
+		this.searchInput = headerEl.createEl("input", {
+			type: "search",
+			cls: "memos-attachment-picker-search",
+			placeholder: t("view.attachmentPickerSearch"),
+			attr: { autocomplete: "off" },
+		});
+		this.searchInput.addEventListener("input", () => {
+			this.filterFiles(this.searchInput?.value ?? "");
+		});
+		this.searchInput.addEventListener("compositionend", () => {
+			this.filterFiles(this.searchInput?.value ?? "");
+		});
+
+		this.gridEl = this.contentEl.createDiv({ cls: "memos-attachment-picker-grid" });
+		this.renderGrid();
+
+		window.setTimeout(() => {
+			this.searchInput?.focus();
+		}, 0);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+		this.modalEl.removeClass("memos-attachment-picker-modal");
+	}
+
+	private collectAttachmentFiles(): TFile[] {
+		const files = this.app.vault.getFiles();
+		return files
+			.filter((file) => {
+				const ext = file.extension.toLowerCase();
+				return IMAGE_EXTENSIONS.has(ext);
+			})
+			.sort((a, b) => b.stat.mtime - a.stat.mtime);
+	}
+
+	private filterFiles(query: string): void {
+		const q = query.trim().toLowerCase();
+		if (!q) {
+			this.filteredFiles = this.allFiles;
+		} else {
+			this.filteredFiles = this.allFiles.filter((file) => {
+				return file.path.toLowerCase().includes(q) || file.name.toLowerCase().includes(q);
+			});
+		}
+		this.renderGrid();
+	}
+
+	private renderGrid(): void {
+		if (!this.gridEl) return;
+		this.gridEl.empty();
+
+		if (!this.filteredFiles.length) {
+			this.gridEl.createDiv({ cls: "memos-attachment-picker-empty", text: t("view.attachmentPickerEmpty") });
+			return;
+		}
+
+		for (const file of this.filteredFiles) {
+			const itemEl = this.gridEl.createDiv({ cls: "memos-attachment-picker-item" });
+			itemEl.addEventListener("click", () => {
+				this.selectFile(file);
+			});
+
+			const thumbEl = itemEl.createDiv({ cls: "memos-attachment-picker-thumb" });
+			this.renderThumbnail(thumbEl, file);
+
+			const nameEl = itemEl.createDiv({ cls: "memos-attachment-picker-name", text: file.name });
+			itemEl.title = file.path;
+		}
+	}
+
+	private renderThumbnail(containerEl: HTMLElement, file: TFile): void {
+		const maxWidth = 120;
+		const maxHeight = 90;
+		const imgEl = containerEl.createEl("img", {
+			attr: {
+				src: this.app.vault.getResourcePath(file),
+				alt: file.name,
+				loading: "lazy",
+			},
+		});
+		imgEl.addEventListener("load", () => {
+			const ratio = Math.min(maxWidth / imgEl.naturalWidth, maxHeight / imgEl.naturalHeight, 1);
+			imgEl.style.width = `${Math.round(imgEl.naturalWidth * ratio)}px`;
+			imgEl.style.height = `${Math.round(imgEl.naturalHeight * ratio)}px`;
+		});
+	}
+
+	private selectFile(file: TFile): void {
+		const markdownLink = this.buildEmbedLink(file);
+		this.onSelect(markdownLink);
+		this.close();
+	}
+
+	private buildEmbedLink(file: TFile): string {
+		const normalizedPath = this.sourcePath.replace(/\\/g, "/");
+		const sourceDir = normalizedPath.includes("/") ? normalizedPath.slice(0, normalizedPath.lastIndexOf("/")) : "";
+		const targetPath = file.path.replace(/\\/g, "/");
+		const relativePath = sourceDir && targetPath.startsWith(`${sourceDir}/`)
+			? targetPath.slice(sourceDir.length + 1)
+			: targetPath;
+		if (this.embedStyle === "markdown") {
+			const fileName = file.basename || file.name;
+			return `\n![${fileName}](${relativePath})\n`;
+		}
+		return `\n![[${relativePath}]]\n`;
+	}
 }
