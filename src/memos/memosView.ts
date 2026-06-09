@@ -20,6 +20,7 @@ import {
 import { openMemoShareModal } from "./share";
 
 const MEMOS_PAGE_SIZE = 50;
+const MEMOS_SCROLL_THRESHOLD = 500;
 
 interface TagTreeNode {
 	name: string;
@@ -37,6 +38,8 @@ export class MemosView extends ItemView {
 	private state: MemosViewState = {};
 	private memos: MemoEntry[] = [];
 	private memoStreamContainerEl: HTMLElement | null = null;
+	private memoStreamListEl: HTMLElement | null = null;
+	private renderedLastDayKey = "";
 	private collapsedTagPaths = new Set<string>();
 	private searchTerm = "";
 	private isSearchComposing = false;
@@ -50,6 +53,8 @@ export class MemosView extends ItemView {
 	private isComposerExpanded = false;
 	private isComposerPreview = false;
 	private hasScrolledMemoStream = false;
+	private isLoadingMore = false;
+	private scrollHandlerRegistered = false;
 	private editingMemo: MemoEntry | null = null;
 	private inlineEditingMemoId: string | null = null;
 	private inlineEditorValue = "";
@@ -149,6 +154,9 @@ export class MemosView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		this.scrollHandlerRegistered = false;
+		this.isLoadingMore = false;
+		this.visibleMemoCount = MEMOS_PAGE_SIZE;
 		this.contentEl.empty();
 		document.body.querySelectorAll(".memos-heatmap-preview").forEach((el) => el.remove());
 	}
@@ -167,7 +175,21 @@ export class MemosView extends ItemView {
 		await this.render();
 	}
 
+	private onScrollLoad = (): void => {
+		const container = this.memoStreamContainerEl;
+		if (!container || this.isLoadingMore) return;
+
+		if (container.scrollTop + container.clientHeight >= container.scrollHeight - MEMOS_SCROLL_THRESHOLD) {
+			this.isLoadingMore = true;
+			const previousCount = this.visibleMemoCount;
+			this.visibleMemoCount += MEMOS_PAGE_SIZE;
+			this.appendMoreMemos(previousCount);
+		}
+	};
+
 	private async render(): Promise<void> {
+		this.scrollHandlerRegistered = false;
+		this.isLoadingMore = true;
 		const { contentEl } = this;
 		contentEl.empty();
 
@@ -203,6 +225,13 @@ export class MemosView extends ItemView {
 		const bodyEl = mainEl.createDiv({ cls: "memos-main-body" });
 		const backToTopButtonEl = this.createBackToTopButton(mainEl, bodyEl);
 		this.memoStreamContainerEl = bodyEl;
+
+		// Register scroll-to-load handler only once
+		if (!this.scrollHandlerRegistered && this.memoStreamContainerEl) {
+			this.registerDomEvent(this.memoStreamContainerEl, "scroll", this.onScrollLoad, { passive: true });
+			this.scrollHandlerRegistered = true;
+		}
+
 		this.bindMainInteractions(shellEl, composerEl, bodyEl, backToTopButtonEl);
 
 		this.memos = await loadMemosFromDailyNotes(
@@ -758,26 +787,29 @@ export class MemosView extends ItemView {
 	private renderMemoStream(parentEl: HTMLElement, memos: MemoEntry[]): void {
 		parentEl.empty();
 		const listEl = parentEl.createDiv({ cls: "memos-stream" });
+		this.memoStreamListEl = listEl;
+		this.renderedLastDayKey = "";
 		if (!memos.length) {
 			const emptyEl = listEl.createDiv({ cls: "memos-empty" });
 			emptyEl.createEl("h3", { text: t("view.noMatchingMemos") });
 			emptyEl.createEl("p", {
 				text: t("view.noMatchingMemosDesc"),
 			});
+			this.isLoadingMore = false;
 			return;
 		}
 
 		const visibleMemos = memos.slice(0, this.visibleMemoCount);
 		const batchSize = 10;
-		let lastDayKey = "";
+
 		let index = 0;
 
 		const renderBatch = (): void => {
 			const end = Math.min(index + batchSize, visibleMemos.length);
 			for (; index < end; index++) {
 				const memo = visibleMemos[index]!;
-				if (memo.dayKey !== lastDayKey) {
-					lastDayKey = memo.dayKey;
+				if (memo.dayKey !== this.renderedLastDayKey) {
+					this.renderedLastDayKey = memo.dayKey;
 					const dayHeadEl = listEl.createDiv({ cls: "memos-day-head" });
 					dayHeadEl.createSpan({ cls: "memos-day-head-label", text: formatReadableDay(memo.dayKey) });
 				}
@@ -791,21 +823,57 @@ export class MemosView extends ItemView {
 		renderBatch();
 
 		if (visibleMemos.length < memos.length) {
-			const loadMoreWrapEl = listEl.createDiv({ cls: "memos-load-more-wrap" });
-			const remainingCount = memos.length - visibleMemos.length;
-			const loadMoreButtonEl = loadMoreWrapEl.createEl("button", {
-				cls: "memos-load-more-button",
-				text: t("view.loadMore", remainingCount),
-				attr: {
-					type: "button",
-					"aria-label": `Load ${Math.min(MEMOS_PAGE_SIZE, remainingCount)} more memos`,
-				},
-			});
-			loadMoreButtonEl.addEventListener("click", () => {
-				this.visibleMemoCount += MEMOS_PAGE_SIZE;
-				this.renderFilteredMemoStream();
-			});
+			listEl.createDiv({ cls: "memos-load-more-wrap" });
 		}
+
+		this.isLoadingMore = false;
+	}
+
+	private appendMoreMemos(previousCount: number): void {
+		const listEl = this.memoStreamListEl;
+		if (!listEl) {
+			this.isLoadingMore = false;
+			return;
+		}
+		const viewModel = buildViewModel(
+			this.memos,
+			this.searchTerm,
+			this.activeTag,
+			this.activeDayKey,
+			this.sortOrder,
+			this.statusFilter,
+			this.viewFilter,
+		);
+		const memos = viewModel.filteredMemos;
+		const newSlice = memos.slice(previousCount, this.visibleMemoCount);
+		if (!newSlice.length) {
+			this.isLoadingMore = false;
+			return;
+		}
+		listEl.querySelectorAll(".memos-load-more-wrap").forEach((el) => el.remove());
+		let index = 0;
+		const batchSize = 10;
+		const renderBatch = (): void => {
+			const end = Math.min(index + batchSize, newSlice.length);
+			for (; index < end; index++) {
+				const memo = newSlice[index]!;
+				if (memo.dayKey !== this.renderedLastDayKey) {
+					this.renderedLastDayKey = memo.dayKey;
+					const dayHeadEl = listEl.createDiv({ cls: "memos-day-head" });
+					dayHeadEl.createSpan({ cls: "memos-day-head-label", text: formatReadableDay(memo.dayKey) });
+				}
+				void this.renderMemoCard(listEl, memo);
+			}
+			if (index < newSlice.length) {
+				setTimeout(renderBatch, 0);
+			} else {
+				if (this.visibleMemoCount < memos.length) {
+					listEl.createDiv({ cls: "memos-load-more-wrap" });
+				}
+				this.isLoadingMore = false;
+			}
+		};
+		renderBatch();
 	}
 
 	private renderFilteredMemoStream(): void {
